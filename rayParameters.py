@@ -30,6 +30,7 @@ class Memory(object):
     def __len__(self):
         return len(self.memory)
 
+
 class EpsilonGreedyStrategy():
     def __init__(self, start, end, decay):
         self.start = start
@@ -42,7 +43,8 @@ class EpsilonGreedyStrategy():
             return self.end
         else:
             return current_rate
-
+          
+#Taken from torch DQN tutorial
 class DQN():
     def __init__(self, state_dim, action_dim, n_latent_var, lr, betas, gamma):
         # torch.cuda.set_device(0)
@@ -60,7 +62,6 @@ class DQN():
 
 
     def update(self, memory, BATCH_SIZE):
-        #for _ in range((update_timestep//2)//BATCH_SIZE):
         transitions = memory.sample(BATCH_SIZE)
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
@@ -104,6 +105,7 @@ class DQN():
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
 
+#A simple 3 layer FCC from the DQN tutorial
 class ConvNet(nn.Module):
     """Small ConvNet for MNIST."""
 
@@ -190,29 +192,33 @@ class DataWorker(object):
           s = self.numpyToTensor(state)
           action = self.DQN.policy_net(s)
           action = torch.argmax(action, dim=-1)
+          #Translating the actions to discretized actions
           actionTranslated = self.translateAction(action)
           state, rew, done, info = self.env.step(actionTranslated)
+          
+          # Making the tensors to be save in memory and adding a dimension
           prevState = torch.unsqueeze(prevState, 0)
-          stateMem = torch.unsqueeze(torch.from_numpy(state.copy()), 0)
+          stateMem = torch.unsqueeze(torch.from_numpy(state.copy()), 0) #Dont want to overwrite the state
           rew = torch.unsqueeze(torch.tensor(rew), 0)
+          # Saving the state, action, nextState and reward to memory
           memory.push(prevState, action, stateMem, rew)
-          if done:
+          
+          if done:#You can print the timestep if you want to double check that it works
             state = self.env.reset()
         return memory
         
     def numpyToTensor(self, state):
-      s = np.expand_dims(state, axis=0)
-      s = np.swapaxes(s, 1, -1)
+      s = np.expand_dims(state, axis=0)#Same as torch unsqueeze
+      s = np.swapaxes(s, 1, -1)#torch is channel first
       return torch.from_numpy(s.copy())
       
     def translateAction(self, action):
       actionDict = {0: np.array([0, 1.0, 0]), 1: np.array([-1.0, 0, 0]), 2: np.array([0, 0, 1]),
                   3: np.array([1.0, 0, 0])}
-      return actionDict[action.item()]
+      return actionDict[action.item()] #Discretized actions
       
-
+############### The validation in ray parameter server tutorial#####################
 def performNActions(DQN, N, env):
-    #memory = Memory()
     state = env.reset()
     rewardList = []
     for t in range(N):
@@ -221,7 +227,6 @@ def performNActions(DQN, N, env):
         action = DQN.policy_net(s)
         action = translateAction(torch.argmax(action, dim=-1))
         state, rew, done, info = env.step(action)
-        #memory.push(prevState, action, state, rew)
         rewardList.append(rew)
         if done:
             break
@@ -237,7 +242,9 @@ def translateAction(action):
     actionDict = {0: np.array([0, 1.0, 0]), 1: np.array([-1.0, 0, 0]), 2: np.array([0, 0, 1]),
                   3: np.array([1.0, 0, 0])}
     return actionDict[action.item()]
+############### End of the validation code from the ray parameter server tutorial ###############
 
+#Hyperparameters
 numActions = 4
 stateDim = 96*96*3
 n_latent_var = 64
@@ -245,33 +252,28 @@ lr = 0.002
 betas = (0.9, 0.999)
 gamma = 0.9
 iterations = 200
-num_workers = 16 #Set gpu to num_workers//num_gpu
-env = gym.make("CarRacing-v0")
+num_workers = 16
+env = gym.make("CarRacing-v0")#Used for validation
+model = DQN(stateDim, numActions, n_latent_var, lr, betas, gamma) #Used for validation
 
 ray.init(ignore_reinit_error=True)
-ps = ParameterServer.remote(stateDim, numActions, n_latent_var, lr, betas, gamma)
-workers = [DataWorker.remote(stateDim, numActions, n_latent_var, lr, betas, gamma) for i in range(num_workers)]
-
-model = DQN(stateDim, numActions, n_latent_var, lr, betas, gamma)
-#test_loader = get_data_loader()[1]
+ps = ParameterServer.remote(stateDim, numActions, n_latent_var, lr, betas, gamma)#Creating the parameter server
+workers = [DataWorker.remote(stateDim, numActions, n_latent_var, lr, betas, gamma) for i in range(num_workers)] #Creating the workers
 
 print("Running synchronous parameter server training.")
 current_weights = ps.get_weights.remote()
-for i in range(iterations):
+for i in range(iterations): #Number of episodes
     gradients = [
         worker.compute_gradients.remote(current_weights) for worker in workers
-    ]
+    ]#Performing the task and setting new weights
     # Calculate update after all gradients are available.
-    current_weights = ps.apply_gradients.remote(*gradients)
+    current_weights = ps.apply_gradients.remote(*gradients) #Sending the gradients to the parameter server
     print("Done running workers")
-    #if i % 10 == 0:
-    # Evaluate the current model.
+    
+    # Evaluate the current model. I do this every episode for logging purposes
     model.policy_net.set_weights(ray.get(current_weights))
     reward = performNActions(model, 1000, env)
     print("Iter {}: \t reward is {:.4f}".format(i, reward))
-    #accuracy = evaluate(model, test_loader)
-    #print("Iter {}: \taccuracy is {:.1f}".format(i, accuracy))
-
-#print("Final accuracy is {:.1f}.".format(accuracy))
+   
 # Clean up Ray resources and processes before the next example.
 ray.shutdown()
