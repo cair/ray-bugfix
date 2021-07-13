@@ -197,6 +197,7 @@ class DataWorker(object):
           rew = torch.unsqueeze(torch.tensor(rew), 0)
           memory.push(prevState, action, stateMem, rew)
           if done:
+            print(t)
             state = self.env.reset()
         return memory
         
