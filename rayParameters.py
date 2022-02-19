@@ -168,7 +168,7 @@ class ParameterServer(object):
         return self.model.get_weights()
         
         
-@ray.remote(max_restarts=-1, max_task_retries=2)
+@ray.remote(max_restarts=-1, max_task_retries=-1)
 class DataWorker(object):
     def __init__(self, state_dim, action_dim, n_latent_var, lr, betas, gamma):
         self.DQN = DQN(state_dim, action_dim, n_latent_var, lr, betas, gamma)
