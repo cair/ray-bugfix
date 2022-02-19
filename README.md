@@ -1,8 +1,8 @@
 # ray-bugfix
-This is a work around to issues with RLLib, such as https://github.com/ray-project/ray/issues/15089
+This is a workaround to issues with RLLib, such as https://github.com/ray-project/ray/issues/15089
+Though it can be used for any gym environment, with very small changes
 
-Changing the environment and the models, you can run ray for multiple gym environments.
-
+# Information for running scripts
 The NN models can be changed or fixed in the model.py file
 
 The update algorithm can be added similarly to the DQN.py and PPO.py files (please stay consistent when doing so)
