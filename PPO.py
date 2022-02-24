@@ -1,23 +1,29 @@
 import torch
 import torch.nn as nn
+from memory import Transition
 
 class PPO:
-    def __init__(self, state_dim, action_dim, n_latent_var, lr, betas, gamma, K_epochs, eps_clip, Transition, model, device):
+    def __init__(self, state_dim, action_dim, n_latent_var, lr, betas, gamma, model, device, K_epochs=4, eps_clip=0.2):
         self.lr = lr
         self.device = device
         self.betas = betas
         self.gamma = gamma
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
+        self.transistions = Transition
 
         self.policy = model(state_dim, action_dim, n_latent_var).to(device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
         self.policy_old = model(state_dim, action_dim, n_latent_var).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
+        self.policy = self.policy.float()
+        self.policy_old = self.policy_old.float()
 
         self.MseLoss = nn.MSELoss()
 
     def update(self, memory):
+        memory = memory.getMem()
+        memory = self.transistions(*zip(*memory))
         # Monte Carlo estimate of state rewards:
         rewards = []
         discounted_reward = 0
@@ -32,10 +38,9 @@ class PPO:
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
 
         # convert list to tensor
-        old_states = torch.stack(memory.states).to(self.device).detach()
-        old_actions = torch.stack(memory.actions).to(self.device).detach()
+        old_states = torch.cat(memory.state).to(self.device).detach()
+        old_actions = torch.cat(memory.action).to(self.device).detach()
         old_logprobs = torch.stack(memory.logprobs).to(self.device).detach()
-
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # Evaluating old actions and values :

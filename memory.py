@@ -3,7 +3,7 @@ from collections import deque
 from collections import namedtuple
 
 Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                        ('state', 'action', 'next_state', 'rewards', 'is_terminals', 'logprobs'))
 
 class Memory(object):
 
@@ -19,3 +19,6 @@ class Memory(object):
 
     def __len__(self):
         return len(self.memory)
+
+    def getMem(self):
+        return self.memory

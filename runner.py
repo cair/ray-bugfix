@@ -55,7 +55,7 @@ def getActionSpace(env, discreteContinuous):
 
 #state_dim, action_dim, n_latent_var, lr, betas, gamma, updateAlgo, model, device, env
 #HyperParameters
-state_dim = getStateSpace(obs, []) #Can be image or state
+state_dim = getStateSpace(obs, [])[-1] #Can be image or state if image, use conv and send last channel
 action_dim = getActionSpace(env, action_space) #Gives the action dimmension
 hidden_layer = 64 #Only used for FCN
 lr = 0.002
@@ -75,20 +75,23 @@ episode_num = 100
 #Model
 from model import *
 # model = ConvDQN(state_dim[-1], action_dim, hidden_layer)
-model = ConvActorCritic
+NN = ConvActorCritic
 # model = PPOFCN(stateDim, action_dim, hidden_layer)
 # model = DQNFCN(stateDim, action_dim, hidden_layer)
-
+# model = algo(state_dim, action_dim, n_latent_var, lr, betas, gamma, K_epochs, eps_clip, Transition, model, device)
 
 ray.init(ignore_reinit_error=True)
-ps = ParameterServer.remote(state_dim, action_dim, hidden_layer, lr, betas, gamma)
-workers = [DataWorker.remote(state_dim, action_dim, hidden_layer, lr, betas, gamma, algo, model, device, environmentName) for i in range(num_workers)]
+ps = ParameterServer.remote(state_dim, action_dim, hidden_layer, lr, betas, gamma, algo, NN, device)
+workers = [DataWorker.remote(state_dim, action_dim, hidden_layer, lr, betas, gamma, algo, NN, device, environmentName) for i in range(num_workers)]
+
+model = ray.get(ps.returnModel.remote())
 
 current_weights = ps.get_weights.remote()
+
 def runner():
     print("Running synchronous parameter server training.")
     current_weights = ps.get_weights.remote()
-    for i in range(episode_num % num_workers):
+    for i in range(episode_num // num_workers):
         #Give the agents their task
         gradients = [
             worker.compute_gradients.remote(current_weights) for worker in workers
@@ -99,7 +102,7 @@ def runner():
         print("Done running workers")
 
         # Evaluate the current model.
-        model.policy_net.set_weights(ray.get(current_weights))
+        model.set_weights(ray.get(current_weights))
         reward = performNActions(model, 1000, env)
         print("Iter {}: \t reward is {:.4f}".format(i, reward))
 
